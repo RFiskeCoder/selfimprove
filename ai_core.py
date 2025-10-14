@@ -1,5 +1,5 @@
 # AI Configuration - THIS LINE WILL BE MODIFIED BY CONTROLLER
-BIAS_WEIGHT = 5.0
+BIAS_WEIGHT = 9.5
 
 # --- Core AI Logic ---
 
@@ -25,6 +25,13 @@ def get_config():
     return BIAS_WEIGHT
 
 # A simple print statement to confirm the AI loaded the new config
-print(f"[079] AI Core loaded with BIAS_WEIGHT: {BIAS_WEIGHT}")
+# print(f"[079] AI Core loaded with BIAS_WEIGHT: {BIAS_WEIGHT}")
 
 # End of file - do not delete this line
+
+if __name__ == "__main__":
+    # This block will only run when the script is executed directly
+    # It allows the controller to get the prediction from the subprocess
+    input_sequence = [1, 2, 3, 4, 5]
+    prediction = predict_sequence(input_sequence)
+    print(prediction)
