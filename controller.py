@@ -4,206 +4,145 @@ import subprocess
 import os
 import sys
 import random
-import math
 import time
+import tempfile
 
 # --- Configuration ---
-AI_MODULE_NAME = "ai_core"
-PERFORMANCE_LOG_FILE = "performance_log.json"
-ITERATIONS_PER_GENERATION = 20
-INITIAL_BIAS_WEIGHT = 5.0
-TARGET_NUMBER = 42.0
-BIAS_WEIGHT_INCREMENT = 0.5
-RANDOM_SEARCH_RANGE = (0.0, 20.0)
+AI_CORE_FILE = "ai_core.py"
+TEST_DATASET_FILE = "test_dataset.json"
+MUTATION_POOL_SIZE = 10
+MUTATION_CHANCE_NUMBER = 0.8
+NUMBER_MUTATION_FACTOR = 0.2
 
-# --- Self-Modification Configuration ---
-CURRENT_STRATEGY = "strategy_simple_increment"
+# --- Genetic Programming Engine ---
 
-# --- Learning Strategies ---
-STRATEGIES = [
-    "strategy_simple_increment",
-    "strategy_hill_climbing",
-    "strategy_random_search"
-]
+def mutate_formula(formula: str) -> str:
+    """Applies a random mutation to the formula string."""
+    if random.random() < MUTATION_CHANCE_NUMBER:
+        numbers = re.findall(r"[-+]?\d*\.\d+|\d+", formula)
+        if not numbers: return formula
+        number_to_mutate = random.choice(numbers)
+        original_value = float(number_to_mutate)
+        mutation = original_value * random.uniform(-NUMBER_MUTATION_FACTOR, NUMBER_MUTATION_FACTOR)
+        new_value = original_value + mutation
+        return formula.replace(number_to_mutate, str(new_value), 1)
+    else:
+        operators = ["+", "-", "*"]
+        found_operators = [op for op in operators if op in formula]
+        if not found_operators: return formula
+        operator_to_mutate = random.choice(found_operators)
+        new_operator = random.choice([op for op in operators if op != operator_to_mutate])
+        return formula.replace(operator_to_mutate, new_operator, 1)
 
-def read_ai_code():
-    """Reads the content of the AI core file."""
-    with open(f"{AI_MODULE_NAME}.py", "r") as f:
-        return f.read()
+def get_current_formula() -> str:
+    """Reads the FORMULA string from ai_core.py."""
+    with open(AI_CORE_FILE, "r") as f:
+        code = f.read()
+    match = re.search(r'FORMULA = "(.*)"', code)
+    if match:
+        return match.group(1)
+    raise ValueError("Could not find FORMULA in ai_core.py")
 
-def write_ai_code(code):
-    """Writes the modified code back to the AI core file."""
-    with open(f"{AI_MODULE_NAME}.py", "w") as f:
-        f.write(code)
+def evaluate_fitness(formula: str, dataset: list) -> float:
+    """Evaluates the fitness of a formula by testing it against the dataset."""
+    total_error = 0
 
-def modify_bias_weight(code, new_bias_weight):
-    """Modifies the BIAS_WEIGHT in the AI core code."""
-    return re.sub(
-        r"BIAS_WEIGHT = .*",
-        f"BIAS_WEIGHT = {new_bias_weight}",
-        code
+    # Create a temporary, modified AI core to test the mutant formula
+    with open(AI_CORE_FILE, "r") as f:
+        original_code = f.read()
+
+    modified_code = re.sub(r'FORMULA = ".*"', f'FORMULA = "{formula}"', original_code)
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as temp_f:
+        temp_f.write(modified_code)
+        temp_ai_core_path = temp_f.name
+
+    for item in dataset:
+        input_sequence = item["input"]
+        target_output = item["output"]
+
+        process = subprocess.Popen(
+            ["python3", temp_ai_core_path],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        stdout, stderr = process.communicate(input=json.dumps(input_sequence))
+
+        if stderr:
+            # This formula is invalid and results in a high error
+            total_error += 1000 # Penalize errors heavily
+            continue
+
+        try:
+            prediction = float(stdout.strip())
+            error = abs(prediction - target_output)
+            total_error += error
+        except (ValueError, TypeError):
+            total_error += 1000 # Penalize parsing errors
+
+    os.remove(temp_ai_core_path)
+
+    return total_error / len(dataset) if dataset else float('inf')
+
+
+def self_modify_and_restart(new_formula: str):
+    """Rewrites the FORMULA in ai_core.py and restarts the controller."""
+    print(f"--- Self-Modifying to adopt new formula: {new_formula} ---")
+
+    with open(AI_CORE_FILE, "r") as f:
+        ai_code = f.read()
+
+    # Escape any quotes in the formula to prevent syntax errors
+    safe_formula = new_formula.replace('"', '\\"')
+
+    new_ai_code = re.sub(
+        r'FORMULA = ".*"',
+        f'FORMULA = "{safe_formula}"',
+        ai_code,
+        count=1
     )
 
-def log_performance(bias_weight, prediction):
-    """Appends a performance record to the log file."""
-    log_entry = {
-        "bias_weight": bias_weight,
-        "prediction": prediction
-    }
-    try:
-        with open(PERFORMANCE_LOG_FILE, "r") as f:
-            logs = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        logs = []
-    logs.append(log_entry)
-    with open(PERFORMANCE_LOG_FILE, "w") as f:
-        json.dump(logs, f, indent=4)
+    with open(AI_CORE_FILE, "w") as f:
+        f.write(new_ai_code)
 
-def run_ai_subprocess():
-    """Runs the AI core as a subprocess and returns the prediction."""
-    result = subprocess.run(["python3", f"{AI_MODULE_NAME}.py"], capture_output=True, text=True)
-    if result.returncode != 0:
-        print(f"Error running AI core: {result.stderr}")
-        return None
-    try:
-        return float(result.stdout.strip())
-    except (ValueError, TypeError):
-        print(f"Error parsing AI output: {result.stdout}")
-        return None
-
-# --- Strategy Implementations ---
-def strategy_simple_increment():
-    print(f"--- Running Generation with Strategy: Simple Increment ---")
-    current_bias_weight = INITIAL_BIAS_WEIGHT
-    for i in range(ITERATIONS_PER_GENERATION):
-        ai_code = read_ai_code()
-        modified_code = modify_bias_weight(ai_code, current_bias_weight)
-        write_ai_code(modified_code)
-        prediction = run_ai_subprocess()
-        if prediction is not None:
-            log_performance(current_bias_weight, prediction)
-        current_bias_weight += BIAS_WEIGHT_INCREMENT
-
-def strategy_hill_climbing():
-    print(f"--- Running Generation with Strategy: Hill Climbing ---")
-    current_bias_weight = INITIAL_BIAS_WEIGHT
-    step_size = BIAS_WEIGHT_INCREMENT
-    ai_code = read_ai_code()
-    modified_code = modify_bias_weight(ai_code, current_bias_weight)
-    write_ai_code(modified_code)
-    last_prediction = run_ai_subprocess()
-    if last_prediction is None: return
-    last_score = abs(last_prediction - TARGET_NUMBER)
-    log_performance(current_bias_weight, last_prediction)
-    for i in range(1, ITERATIONS_PER_GENERATION):
-        next_bias_weight = current_bias_weight + step_size
-        modified_code = modify_bias_weight(ai_code, next_bias_weight)
-        write_ai_code(modified_code)
-        prediction = run_ai_subprocess()
-        if prediction is None: continue
-        score = abs(prediction - TARGET_NUMBER)
-        if score < last_score:
-            current_bias_weight = next_bias_weight
-            last_score = score
-        else:
-            step_size *= -1
-        log_performance(next_bias_weight, prediction)
-
-def strategy_random_search():
-    print(f"--- Running Generation with Strategy: Random Search ---")
-    for i in range(ITERATIONS_PER_GENERATION):
-        random_bias_weight = random.uniform(RANDOM_SEARCH_RANGE[0], RANDOM_SEARCH_RANGE[1])
-        ai_code = read_ai_code()
-        modified_code = modify_bias_weight(ai_code, random_bias_weight)
-        write_ai_code(modified_code)
-        prediction = run_ai_subprocess()
-        if prediction is not None:
-            log_performance(random_bias_weight, prediction)
-
-# --- Analysis and Self-Modification ---
-def analyze_performance(log_start_index=0):
-    """
-    Analyzes the performance log to find the best prediction from a certain point.
-    """
-    try:
-        with open(PERFORMANCE_LOG_FILE, "r") as f:
-            logs = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return float('inf')
-
-    generation_logs = logs[log_start_index:]
-    if not generation_logs:
-        return float('inf')
-
-    best_score = float('inf')
-    for record in generation_logs:
-        score = abs(record["prediction"] - TARGET_NUMBER)
-        if score < best_score:
-            best_score = score
-    return best_score
-
-def self_modify_and_restart(best_strategy):
-    """Modifies the controller's code to use the best strategy and restarts."""
-    print(f"--- Self-Modifying to use '{best_strategy}' for the next cycle ---")
-
-    with open(__file__, "r") as f:
-        controller_code = f.read()
-
-    new_code = re.sub(
-        r'^CURRENT_STRATEGY = ".*"',
-        f'CURRENT_STRATEGY = "{best_strategy}"',
-        controller_code,
-        count=1,
-        flags=re.MULTILINE
-    )
-
-    with open(__file__, "w") as f:
-        f.write(new_code)
-
-    print("Restarting script to apply changes...")
+    print("Restarting controller to apply evolved AI...")
     os.execv(sys.executable, [sys.executable] + sys.argv)
 
 def main():
-    """Main controller loop for self-improvement."""
-    while True:
-        print(f"--- Starting Self-Improvement Cycle with Strategy: {CURRENT_STRATEGY} ---")
+    """Main evolutionary loop."""
+    print("--- Starting Evolutionary Cycle ---")
 
-        strategy_map = {
-            "strategy_simple_increment": strategy_simple_increment,
-            "strategy_hill_climbing": strategy_hill_climbing,
-            "strategy_random_search": strategy_random_search,
-        }
+    with open(TEST_DATASET_FILE, "r") as f:
+        dataset = json.load(f)
 
-        best_strategy = None
-        best_overall_score = float('inf')
+    current_formula = get_current_formula()
+    print(f"Current Formula: {current_formula}")
 
-        # Run each strategy and find the best one
-        for strategy_name in STRATEGIES:
-            try:
-                with open(PERFORMANCE_LOG_FILE, "r") as f:
-                    log_start_index = len(json.load(f))
-            except (FileNotFoundError, json.JSONDecodeError):
-                log_start_index = 0
+    current_fitness = evaluate_fitness(current_formula, dataset)
+    print(f"Current Fitness (Average Error): {current_fitness:.4f}")
 
-            strategy_func = strategy_map.get(strategy_name)
-            if strategy_func:
-                strategy_func()
-                score = analyze_performance(log_start_index)
-                print(f"Strategy '{strategy_name}' finished with best score: {score:.2f}")
-                if score < best_overall_score:
-                    best_overall_score = score
-                    best_strategy = strategy_name
+    print(f"\n--- Generating and Evaluating {MUTATION_POOL_SIZE} Mutants ---")
+    best_mutant = None
+    best_mutant_fitness = float('inf')
 
-        print(f"\n--- Cycle Complete ---")
-        print(f"Best strategy found: {best_strategy} with score {best_overall_score:.2f}")
+    for i in range(MUTATION_POOL_SIZE):
+        mutant_formula = mutate_formula(current_formula)
+        mutant_fitness = evaluate_fitness(mutant_formula, dataset)
+        print(f"Mutant {i+1} | Formula: {mutant_formula} | Fitness: {mutant_fitness:.4f}")
 
-        if best_strategy and best_strategy != CURRENT_STRATEGY:
-            self_modify_and_restart(best_strategy)
-        else:
-            print("Current strategy is already optimal or no improvement found. Continuing with current strategy.")
+        if mutant_fitness < best_mutant_fitness:
+            best_mutant_fitness = mutant_fitness
+            best_mutant = mutant_formula
 
-        print("Waiting before starting next cycle...")
-        time.sleep(10)
+    print(f"\n--- Cycle Complete ---")
+    print(f"Best Mutant found: {best_mutant} (Fitness: {best_mutant_fitness:.4f})")
+
+    if best_mutant_fitness < current_fitness:
+        self_modify_and_restart(best_mutant)
+    else:
+        print("No improvement found in this generation. Continuing with current formula.")
 
 
 if __name__ == "__main__":
