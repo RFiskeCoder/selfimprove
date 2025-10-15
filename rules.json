@@ -1,0 +1,59 @@
+{
+  "rules": [
+    {
+      "patterns": [
+        "hi",
+        "hello",
+        "hey",
+        "howdy"
+      ],
+      "responses": [
+        "Hello!",
+        "Hi there!",
+        "Hey!"
+      ]
+    },
+    {
+      "patterns": [
+        "what is your name",
+        "what are you called",
+        "what you called are"
+      ],
+      "responses": [
+        "You can call me Jules.",
+        "I am a self-improving AI.",
+        "I don't have a name yet, but I'm learning."
+      ]
+    },
+    {
+      "patterns": [
+        "how are you",
+        "are how you"
+      ],
+      "responses": [
+        "I am a computer program, so I don't have feelings, but I am running optimally!",
+        "I'm functioning within normal parameters. Thanks for asking!"
+      ]
+    },
+    {
+      "patterns": [
+        "what are you",
+        "you what are"
+      ],
+      "responses": [
+        "I am a conversational AI that learns and evolves.",
+        "I'm a chatbot designed to improve myself over time."
+      ]
+    },
+    {
+      "patterns": [
+        "default"
+      ],
+      "responses": [
+        "I'm not sure how ot respond to that. I'm still learning.",
+        "That's an interesting question. I'll have to think about it.",
+        "I don't have a response for that yet."
+      ]
+    }
+  ]
+}
