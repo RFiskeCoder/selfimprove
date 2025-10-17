@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Evolutionary Chatbot</title>
+    <style>
+        body { font-family: sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background-color: #f4f4f4; }
+        .chat-window { height: 400px; overflow-y: scroll; border: 1px solid #ccc; padding: 10px; background-color: #fff; margin-bottom: 20px; }
+        .message { margin-bottom: 10px; }
+        .message .user { font-weight: bold; color: #007bff; }
+        .message .bot { font-weight: bold; color: #28a745; }
+        .input-form { display: flex; }
+        .input-form input { flex-grow: 1; padding: 10px; border: 1px solid #ccc; }
+        .input-form button { padding: 10px; border: none; background-color: #007bff; color: #fff; cursor: pointer; }
+        .header { text-align: center; margin-bottom: 20px; }
+        .header a { color: #dc3545; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Evolutionary Chatbot</h1>
+        <p><a href="/reset">Reset Conversation</a></p>
+    </div>
+
+    <div class="chat-window" id="chat-window">
+        {% for exchange in conversation %}
+            <div class="message">
+                <span class="user">You:</span> {{ exchange.user }}
+            </div>
+            <div class="message">
+                <span class="bot">Bot:</span> {{ exchange.bot }}
+            </div>
+        {% endfor %}
+    </div>
+
+    <form action="/ask" method="POST" class="input-form">
+        <input type="text" name="message" placeholder="Type your message..." autocomplete="off" autofocus>
+        <button type="submit">Send</button>
+    </form>
+
+    <script>
+        // Auto-scroll to the bottom of the chat window
+        const chatWindow = document.getElementById('chat-window');
+        chatWindow.scrollTop = chatWindow.scrollHeight;
+    </script>
+</body>
+</html>
